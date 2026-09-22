@@ -7,7 +7,7 @@ __pycache__/
 .streamlit/
 *.log
 
-# Dados sensíveis / resultados locais
+# Sensitive data / local outputs
 Transcricoes_atas/
 *_segmentos*.json
 *_transcricao*.txt
@@ -23,6 +23,6 @@ Transcricoes_atas/
 *.mp4
 *.pdf
 
-# Sistema
+# System files
 .DS_Store
 Thumbs.db
