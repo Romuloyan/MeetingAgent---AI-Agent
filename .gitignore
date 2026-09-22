@@ -1,0 +1,28 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.streamlit/
+*.log
+
+# Dados sensíveis / resultados locais
+Transcricoes_atas/
+*_segmentos*.json
+*_transcricao*.txt
+*_transcricao*.docx
+*_ata*.docx
+*_ata*.txt
+*_tarefas*.txt
+*_analise*.txt
+*.zip
+*.m4a
+*.mp3
+*.wav
+*.mp4
+*.pdf
+
+# Sistema
+.DS_Store
+Thumbs.db
