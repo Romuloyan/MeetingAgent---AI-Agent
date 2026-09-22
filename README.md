@@ -2,7 +2,7 @@
 
 MeetingAgent is a local AI-assisted workflow for turning meeting recordings into speaker-labelled transcripts, structured meeting notes, draft minutes, and action-item reports.
 
-The project was built as a practical MVP for Portuguese association/club meeting workflows, especially meetings where the final minutes need to be written in formal European Portuguese. The repository documentation is written in English for portfolio and project presentation purposes, while the generated meeting-minutes output is currently optimized for Portuguese.
+The project was built as a practical MVP for Portuguese meeting workflows, especially meetings where the final minutes need to be written in formal European Portuguese. The repository documentation is written in English for portfolio and project presentation purposes, while the generated meeting-minutes output is currently optimized for Portuguese.
 
 ## What the project does
 
