@@ -1,91 +1,451 @@
 # MeetingAgent — AI Agent
 
-A local AI-assisted meeting-minutes agent built with Python and Streamlit.
+MeetingAgent is a local AI-assisted workflow for turning meeting recordings into speaker-labelled transcripts, structured meeting notes, draft minutes, and action-item reports.
 
-The project helps transform meeting recordings and transcripts into structured outputs:
+The project was built as a practical MVP for Portuguese association/club meeting workflows, especially meetings where the final minutes need to be written in formal European Portuguese. The repository documentation is written in English for portfolio and project presentation purposes, while the generated meeting-minutes output is currently optimized for Portuguese.
 
-- speaker-labelled transcripts;
-- real speaker name assignment;
-- meeting context upload;
-- AI-generated draft minutes;
-- task and pending-action extraction;
-- `.txt` and `.docx` exports.
+## What the project does
+
+MeetingAgent connects three stages of a meeting-documentation pipeline:
+
+1. **Google Colab transcription notebook**  
+   Converts audio/video recordings into timestamped transcripts using `faster-whisper`.
+
+2. **Google Colab diarization notebook**  
+   Uses `pyannote.audio` to detect who spoke when and exports speaker-labelled transcript files with labels such as `SPEAKER_00`, `SPEAKER_01`, etc.
+
+3. **Local Streamlit MeetingAgent**  
+   Runs locally on the user's computer, lets the user assign real names to detected speakers, loads optional meeting context documents, and uses Gemini to generate draft meeting minutes and task reports.
+
+The goal is not to fully automate official meeting minutes without human review. The goal is to reduce the manual workload by producing a structured, reviewable draft based on the audio transcript, speaker diarization, and optional meeting documents.
 
 ## Current status
 
 Functional MVP.
 
-The current workflow supports:
+The current version can:
 
-1. Importing transcript and diarization files generated in Google Colab.
-2. Reading diarized speakers such as `SPEAKER_00`, `SPEAKER_01`, etc.
-3. Assigning real names to each detected speaker through a Streamlit interface.
-4. Generating a transcript with real speaker names.
-5. Uploading optional meeting documents, such as agenda, notes, attachments, or a preliminary draft.
-6. Generating draft meeting minutes with Gemini.
-7. Exporting results as `.txt` and `.docx` files.
+- read diarized transcript files generated in Google Colab;
+- list all detected speakers;
+- show useful sample phrases for each speaker;
+- let the user assign real names to `SPEAKER_00`, `SPEAKER_01`, etc.;
+- generate a transcript with real speaker names;
+- upload optional meeting documents such as agendas, notes, attachments, or preliminary drafts;
+- split long transcripts into manageable analysis blocks;
+- call Gemini with retry and fallback logic;
+- generate draft meeting minutes;
+- generate intermediate analysis files;
+- generate a task and pending-action report;
+- export `.txt` and `.docx` files.
+
+## Full workflow overview
+
+```text
+Audio recording
+   ↓
+Colab Notebook 1 — Transcription
+   ↓
+Timestamped transcript + JSON segments + SRT + DOCX
+   ↓
+Colab Notebook 2 — Speaker diarization
+   ↓
+Speaker-labelled transcript with SPEAKER_00, SPEAKER_01, ...
+   ↓
+Local MeetingAgent app
+   ↓
+Manual speaker-name assignment
+   ↓
+Transcript with real names
+   ↓
+Optional meeting context upload
+   ↓
+Gemini analysis and draft minutes generation
+   ↓
+DOCX/TXT exports
+```
+
+## Colab Notebook 1 — Transcription
+
+The first notebook is used in Google Colab to process audio or video files stored in Google Drive.
+
+### Purpose
+
+The notebook automatically finds audio/video files in a Drive folder, transcribes them, and exports several useful formats.
+
+### Main technologies
+
+- Google Colab
+- Google Drive mount
+- `faster-whisper`
+- `ffmpeg`
+- `python-docx`
+
+### Model configuration used during development
+
+```python
+MODELO = "large-v3"
+IDIOMA = "pt"
+```
+
+The notebook detects whether CUDA/GPU is available:
+
+```text
+GPU/CUDA available → device="cuda", compute_type="float16"
+CPU only           → device="cpu", compute_type="int8"
+```
+
+### Supported input formats
+
+The transcription notebook was designed to accept files such as:
+
+```text
+.m4a, .mp3, .wav, .aac, .flac, .mp4, .mov, .mkv, .webm, .ogg
+```
+
+### Expected Drive folder
+
+The working Drive folder used during development was:
+
+```text
+/content/drive/MyDrive/Transcrições e atas
+```
+
+### Output files
+
+For each recording, the transcription notebook creates a result folder and exports files such as:
+
+```text
+<meeting_name>_transcricao_timestamp.txt
+<meeting_name>_transcricao_corrida.txt
+<meeting_name>_legendas.srt
+<meeting_name>_segmentos.json
+<meeting_name>_transcricao.docx
+<meeting_name>_TRANSCRICAO_COMPLETA.zip
+```
+
+The most important file for the next stage is:
+
+```text
+<meeting_name>_segmentos.json
+```
+
+That JSON file contains the transcript split into timestamped segments.
+
+## Colab Notebook 2 — Speaker diarization
+
+The second notebook uses the transcript generated by Notebook 1 and the original audio file to detect speakers.
+
+### Purpose
+
+The diarization notebook answers the question:
+
+```text
+Who spoke when?
+```
+
+It does not transcribe the audio again. It uses the original audio to identify speech intervals and then matches those intervals with the transcript segments generated by Whisper.
+
+### Main technologies
+
+- Google Colab
+- Google Drive mount
+- `pyannote.audio`
+- Hugging Face token stored in Colab Secrets
+- `ffmpeg`
+- `python-docx`
+
+### Hugging Face access
+
+The diarization notebook requires access to the pyannote model through a Hugging Face token.
+
+During development, the token was stored in Colab Secrets as:
+
+```text
+TOKEN
+```
+
+The token itself is not stored in this repository.
+
+### Diarization model
+
+The model used during development was:
+
+```text
+pyannote/speaker-diarization-community-1
+```
+
+### Important implementation note
+
+The final working Colab diarization notebook was built as a one-click workflow.
+
+The notebook does **not** import `pyannote` directly in the active Colab kernel after installation. Instead, it:
+
+1. mounts Google Drive;
+2. installs the required dependencies;
+3. writes an external Python runner script;
+4. launches that script in a clean subprocess;
+5. runs `pyannote.audio` inside that subprocess;
+6. exports the results back to Google Drive.
+
+This approach avoided Colab dependency conflicts involving NumPy, Torch, Numba, and pyannote after runtime package installation.
+
+### Audio preprocessing
+
+Before diarization, the notebook converts the original audio to a clean WAV file:
+
+```text
+16 kHz
+mono
+PCM signed 16-bit
+```
+
+This avoids sample mismatch errors with compressed formats such as `.m4a`.
+
+### Output files
+
+For each meeting, the diarization notebook creates files such as:
+
+```text
+<meeting_name>_segmentos_oradores.json
+<meeting_name>_transcricao_oradores.txt
+<meeting_name>_transcricao_oradores.docx
+<meeting_name>_legendas_oradores.srt
+<meeting_name>_amostras_oradores.txt
+<meeting_name>_COM_ORADORES.zip
+```
+
+The most important file for the local MeetingAgent app is:
+
+```text
+<meeting_name>_segmentos_oradores.json
+```
+
+This file contains the transcript segments with diarized speaker labels.
+
+The file:
+
+```text
+<meeting_name>_amostras_oradores.txt
+```
+
+is useful for manually identifying each detected speaker.
+
+## Local MeetingAgent app
+
+After transcription and diarization in Colab, the local Streamlit app handles the human-in-the-loop part of the workflow.
+
+### What the app does
+
+The local app:
+
+1. searches a local/synced folder for `*_segmentos_oradores.json` files;
+2. loads the selected diarized meeting;
+3. displays useful sample phrases for each detected speaker;
+4. asks the user to map each speaker label to a real name;
+5. generates a new transcript with real names;
+6. optionally loads meeting documents;
+7. calls Gemini to generate draft minutes;
+8. exports the generated documents.
+
+### Speaker assignment
+
+The diarization step only produces generic labels:
+
+```text
+SPEAKER_00
+SPEAKER_01
+SPEAKER_02
+...
+```
+
+The local app lets the user manually map those labels to real names:
+
+```text
+SPEAKER_00 = Person A
+SPEAKER_01 = Person B
+SPEAKER_02 = Person C
+```
+
+If the diarization model split the same person into two labels, the user can assign the same name to both labels.
+
+Example:
+
+```text
+SPEAKER_00 = John Smith
+SPEAKER_03 = John Smith
+```
+
+### Output after speaker assignment
+
+After speaker identification, the app creates:
+
+```text
+<meeting_name>_segmentos_com_nomes.json
+<meeting_name>_transcricao_com_nomes.txt
+<meeting_name>_transcricao_com_nomes.docx
+<meeting_name>_mapa_oradores.json
+```
+
+The main file used for AI minutes generation is:
+
+```text
+<meeting_name>_segmentos_com_nomes.json
+```
+
+## Gemini-based draft minutes generation
+
+The app uses Gemini through the Google GenAI SDK.
+
+The API key must be stored locally in a `.env` file:
+
+```env
+GEMINI_API_KEY=your_api_key_here
+```
+
+The current app supports:
+
+- long transcript splitting into analysis blocks;
+- intermediate block summaries;
+- final draft minutes generation;
+- task and pending-action extraction;
+- basic retry logic;
+- Gemini model fallback logic.
+
+### Gemini outputs
+
+After generating meeting minutes, the app exports:
+
+```text
+<meeting_name>_ata_preliminar_gemini.txt
+<meeting_name>_ata_preliminar_gemini.docx
+<meeting_name>_analise_intermedia_gemini.txt
+<meeting_name>_tarefas_pendentes_gemini.txt
+```
+
+The minutes are currently generated in European Portuguese.
 
 ## Project structure
 
+```text
+MeetingAgent---AI-Agent/
+├── app.py
+├── requirements.txt
+├── README.md
+└── .gitignore
+```
+
+### Main files
+
 - `app.py` — main Streamlit application.
-- `requirements.txt` — Python dependencies.
-- `.gitignore` — excludes secrets, local data, meeting files, and generated outputs.
+- `requirements.txt` — Python dependencies for the local app.
+- `README.md` — project documentation.
+- `.gitignore` — excludes virtual environments, secrets, local transcripts, meeting files, generated outputs, and media files.
 
-## Security
+## Installation
 
-This repository must not contain:
+Clone the repository:
+
+```powershell
+git clone https://github.com/Romuloyan/MeetingAgent---AI-Agent.git
+cd MeetingAgent---AI-Agent
+```
+
+Create a virtual environment:
+
+```powershell
+python -m venv .venv
+```
+
+Install dependencies:
+
+```powershell
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Create a local `.env` file:
+
+```env
+GEMINI_API_KEY=your_api_key_here
+```
+
+Run the app:
+
+```powershell
+& .\.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+## Expected local data folder
+
+During development, the app was configured to look for meeting outputs in a local/synced folder such as:
+
+```text
+C:\Users\Pc\OneDrive\Agente IA\Transcricoes_atas
+```
+
+This can be changed in the Streamlit interface.
+
+The repository does not include real meeting files.
+
+## Security and privacy
+
+This project processes potentially sensitive meeting content. The repository must not contain:
 
 - `.env` files;
 - API keys;
 - audio recordings;
 - real transcripts;
 - real meeting minutes;
-- personal or sensitive files.
+- personal files;
+- generated meeting outputs;
+- zipped exports from Colab;
+- raw meeting documents.
 
-The Gemini API key must remain local in a `.env` file:
+The `.gitignore` file is configured to exclude common sensitive files and generated outputs.
 
-```env
-GEMINI_API_KEY=your_api_key_here
-```
+## Why the workflow is human-in-the-loop
 
-## How to run
+The system deliberately keeps a human validation step between diarization and minutes generation.
 
-```powershell
-cd "C:\Users\Pc\OneDrive\Agente IA\MeetingAgent"
-python -m venv .venv
-& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-& .\.venv\Scripts\python.exe -m streamlit run app.py
-```
+Speaker diarization can detect different voices, but it cannot reliably know real names. It can also split one real person into multiple speaker labels, or merge speakers in noisy sections. For this reason, the app asks the user to confirm the speaker mapping before generating final documents.
 
-## Expected inputs
+The minutes generated by Gemini should also be reviewed before being used officially.
 
-The application expects files generated by the Colab transcription and diarization pipeline, especially:
+## Current limitations
 
-- `*_segmentos_oradores.json`
-
-After speaker identification, it generates:
-
-- `*_segmentos_com_nomes.json`
-- `*_transcricao_com_nomes.txt`
-- `*_transcricao_com_nomes.docx`
-- `*_mapa_oradores.json`
-
-After Gemini-based minutes generation, it generates:
-
-- `*_ata_preliminar_gemini.txt`
-- `*_ata_preliminar_gemini.docx`
-- `*_analise_intermedia_gemini.txt`
-- `*_tarefas_pendentes_gemini.txt`
-
-## Notes
-
-The current app was created for Portuguese meeting workflows, so the generated meeting minutes are designed for European Portuguese output. The repository documentation is kept in English for portfolio and project presentation purposes.
+- The Colab notebooks are part of the broader workflow but are not yet included as `.ipynb` files in this repository.
+- The app currently expects JSON files produced by the existing Colab pipeline.
+- The draft minutes are optimized for Portuguese meeting workflows.
+- The current minutes-generation prompt still needs improvement to produce more formal institutional minutes by default.
+- Real meeting files are intentionally excluded for privacy.
 
 ## Planned improvements
 
-- Formal institutional minutes mode.
-- Separate formal minutes from internal validation reports.
-- Dedicated field for the official agenda.
-- Separate validation report for uncertain or missing information.
-- Download buttons for generated files.
-- Better Gemini model fallback and temporary service-limit handling.
+The next development steps are:
+
+- add the two Colab notebooks to the repository as documented examples;
+- create a formal institutional minutes mode;
+- separate formal minutes from internal validation reports;
+- add a dedicated field for the official agenda;
+- avoid converting additional topics into agenda items;
+- keep decisions/deliberations inside each agenda point;
+- generate a separate validation report for uncertain or missing information;
+- add download buttons for generated files;
+- improve Gemini model fallback and temporary service-limit handling;
+- add example sanitized input/output files;
+- improve project structure into modules instead of a single `app.py`.
+
+## Development notes
+
+This project was developed incrementally from a real workflow:
+
+1. first, a Colab transcription notebook was stabilized;
+2. then a separate Colab diarization notebook was created;
+3. the diarization notebook was changed to a one-click subprocess-based design to avoid Colab dependency conflicts;
+4. local speaker-name assignment was implemented in Streamlit;
+5. Gemini-based draft minutes generation was added;
+6. model fallback and retry behavior were added after temporary API overload errors;
+7. the GitHub repository was created with sensitive data excluded.
+
+## License
+
+No license has been selected yet.
